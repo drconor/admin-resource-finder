@@ -1,0 +1,43 @@
+{
+	"version": 1,
+	"named_parameters": true,
+	"general": {
+		"title": "User Resource Finder",
+		"instructions": "This admin tool searches for all capsules and data assets owned by specific users. Enter one or more user IDs and select your preferred output format."
+	},
+	"parameters": [
+		{
+			"id": "oDZ17DLlUHAOKafw",
+			"name": "User IDs",
+			"param_name": "user-ids",
+			"help_text": "Enter comma-separated user IDs to search for (e.g., abc-123,def-456)",
+			"type": "text",
+			"value_type": "string",
+			"required": true
+		},
+		{
+			"id": "seNJk659hxOD5RmH",
+			"name": "Output Format",
+			"param_name": "output-format",
+			"help_text": "Choose output format: JSON (single file) or CSV (separate files for capsules and data assets)",
+			"type": "list",
+			"value_type": "string",
+			"default_value": "json",
+			"extra_data": [
+				"json",
+				"csv"
+			]
+		}
+	],
+	"results": [
+		{
+			"file_name": "user_resources.json"
+		},
+		{
+			"file_name": "user_capsules.csv"
+		},
+		{
+			"file_name": "user_data_assets.csv"
+		}
+	]
+}

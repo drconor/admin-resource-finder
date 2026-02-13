@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Entry point for reproducible runs
+# Accepts parameters via CLI flags (named parameters mode)
+
+python3 /code/find_user_resources.py "$@"

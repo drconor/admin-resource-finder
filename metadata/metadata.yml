@@ -1,0 +1,12 @@
+metadata_version: 1
+name: Admin Tool - User Resource Finder
+description: Admin tool to find all capsules and data assets owned by specific users.
+  Uses the Code Ocean API to search across all resources and generate comprehensive
+  ownership reports in JSON or CSV format. Requires admin privileges and API token.
+tags:
+- admin
+- API
+- automation
+- data-asset
+- reporting
+- analytics

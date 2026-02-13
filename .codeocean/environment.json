@@ -1,0 +1,21 @@
+{
+	"version": 1,
+	"base_image": "codeocean/python:3.11.13",
+	"options": {
+		"registry_host_arg": true,
+		"git_ask_pass": true,
+		"mount_secrets": true
+	},
+	"installers": {
+		"pip": {
+			"packages": [
+				{
+					"name": "codeocean",
+					"version": "0.14.0"
+				}
+			],
+			"options": {},
+			"pre_install_options": {}
+		}
+	}
+}
