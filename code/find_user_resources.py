@@ -22,6 +22,33 @@ def format_timestamp(timestamp: int) -> str:
         return str(timestamp)
 
 
+class CodeOceanClient:
+    """Extended Code Ocean client with search capabilities."""
+    
+    def __init__(self, domain: str, token: str):
+        """Initialize the client."""
+        self.client = CodeOcean(domain=domain, token=token)
+        self.domain = domain
+    
+    def search_capsules(self, limit: int = 100, offset: int = 0) -> Dict:
+        """Search capsules using the Code Ocean API."""
+        response = self.client.session.post(
+            f"{self.domain}/api/v1/capsules/search",
+            json={"limit": limit, "offset": offset}
+        )
+        response.raise_for_status()
+        return response.json()
+    
+    def search_data_assets(self, limit: int = 100, offset: int = 0) -> Dict:
+        """Search data assets using the Code Ocean API."""
+        response = self.client.session.post(
+            f"{self.domain}/api/v1/data_assets/search",
+            json={"limit": limit, "offset": offset}
+        )
+        response.raise_for_status()
+        return response.json()
+
+
 def find_user_resources(
     api_token: str,
     base_url: Optional[str],
@@ -40,7 +67,10 @@ def find_user_resources(
     Returns:
         Dict with capsules and data_assets lists
     """
-    client = CodeOcean(domain=base_url, token=api_token)
+    client = CodeOceanClient(domain=base_url, token=api_token)
+    
+    # Ensure base_url doesn't have trailing slash for URL construction
+    base_url_clean = base_url.rstrip("/") if base_url else ""
     
     results = {
         "user_ids": user_ids,
@@ -50,24 +80,14 @@ def find_user_resources(
     
     print(f"Searching for resources owned by {len(user_ids)} user(s)...", file=sys.stderr)
     
-    # Search all capsules using direct API call
+    # Search all capsules
     print("Searching capsules...", file=sys.stderr)
     offset = 0
     limit = 100
     
     while True:
         try:
-            # Use the session directly to make the API call
-            # Don't filter by ownership in the API, we'll filter client-side
-            response = client.session.post(
-                f"{base_url}/api/v1/capsules/search",
-                json={
-                    "limit": limit,
-                    "offset": offset
-                }
-            )
-            response.raise_for_status()
-            data = response.json()
+            data = client.search_capsules(limit=limit, offset=offset)
             
             items = data.get("results", [])
             print(f"Fetched {len(items)} capsules at offset {offset}", file=sys.stderr)
@@ -85,10 +105,15 @@ def find_user_resources(
                     tags = capsule.get("tags", [])
                     tags_str = ", ".join(tags) if tags else ""
                     
+                    # Generate capsule URL with full domain
+                    slug = capsule.get("slug")
+                    capsule_url = f"{base_url_clean}/capsule/{slug}" if slug else ""
+                    
                     results["capsules"].append({
                         "id": capsule.get("id"),
                         "name": capsule.get("name"),
-                        "slug": capsule.get("slug"),
+                        "slug": slug,
+                        "url": capsule_url,
                         "owner_id": owner_id,
                         "owner_email": capsule.get("owner_email"),
                         "status": capsule.get("status"),
@@ -111,25 +136,15 @@ def find_user_resources(
             traceback.print_exc()
             break
     
-    # Search all data assets using direct API call
+    # Search all data assets
     print("Searching data assets...", file=sys.stderr)
     offset = 0
     
     while True:
         try:
-            # Use the session directly to make the API call
-            # Don't filter by ownership in the API, we'll filter client-side
-            response = client.session.post(
-                f"{base_url}/api/v1/data_assets/search",
-                json={
-                    "limit": limit,
-                    "offset": offset
-                }
-            )
-            response.raise_for_status()
-            data = response.json()
+            data = client.search_data_assets(limit=limit, offset=offset)
             
-            items = data.get("results", [])  # Changed from 'items' to 'results'
+            items = data.get("results", [])
             print(f"Fetched {len(items)} data assets at offset {offset}", file=sys.stderr)
             
             if not items:
@@ -141,9 +156,15 @@ def find_user_resources(
                 owner_id = asset.get("owner") or asset.get("owner_id")
                 if owner_id in user_ids:
                     created_timestamp = asset.get("created")
+                    
+                    # Generate data asset URL with full domain
+                    asset_id = asset.get("id")
+                    asset_url = f"{base_url_clean}/data-assets/{asset_id}" if asset_id else ""
+                    
                     results["data_assets"].append({
-                        "id": asset.get("id"),
+                        "id": asset_id,
                         "name": asset.get("name"),
+                        "url": asset_url,
                         "owner_id": owner_id,
                         "owner_email": asset.get("owner_email"),
                         "created": created_timestamp,
@@ -188,7 +209,7 @@ def save_results(results: Dict, output_format: str, output_dir: Path) -> None:
             with open(capsules_file, "w", newline="") as f:
                 writer = csv.DictWriter(
                     f,
-                    fieldnames=["id", "name", "slug", "owner_id", "owner_email", "status", "description", "tags", "created", "created_date", "type"]
+                    fieldnames=["id", "name", "slug", "url", "owner_id", "owner_email", "status", "description", "tags", "created", "created_date", "type"]
                 )
                 writer.writeheader()
                 writer.writerows(results["capsules"])
@@ -200,7 +221,7 @@ def save_results(results: Dict, output_format: str, output_dir: Path) -> None:
             with open(assets_file, "w", newline="") as f:
                 writer = csv.DictWriter(
                     f,
-                    fieldnames=["id", "name", "owner_id", "owner_email", "created", "created_date", "type", "size"]
+                    fieldnames=["id", "name", "url", "owner_id", "owner_email", "created", "created_date", "type", "size"]
                 )
                 writer.writeheader()
                 writer.writerows(results["data_assets"])
