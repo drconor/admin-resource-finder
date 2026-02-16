@@ -6,10 +6,20 @@ import csv
 import json
 import os
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 
 from codeocean import CodeOcean
+
+
+def format_timestamp(timestamp: int) -> str:
+    """Convert Unix timestamp to human-readable format."""
+    try:
+        dt = datetime.fromtimestamp(timestamp)
+        return dt.strftime("%Y-%m-%d %H:%M:%S")
+    except (ValueError, TypeError, OSError):
+        return str(timestamp)
 
 
 def find_user_resources(
@@ -70,12 +80,22 @@ def find_user_resources(
                 # The search API returns 'owner' field, not 'owner_id'
                 owner_id = capsule.get("owner") or capsule.get("owner_id")
                 if owner_id in user_ids:
+                    created_timestamp = capsule.get("created")
+                    # Get tags as comma-separated string for CSV compatibility
+                    tags = capsule.get("tags", [])
+                    tags_str = ", ".join(tags) if tags else ""
+                    
                     results["capsules"].append({
                         "id": capsule.get("id"),
                         "name": capsule.get("name"),
                         "slug": capsule.get("slug"),
                         "owner_id": owner_id,
-                        "created": capsule.get("created"),
+                        "owner_email": capsule.get("owner_email"),
+                        "status": capsule.get("status"),
+                        "description": capsule.get("description"),
+                        "tags": tags_str,
+                        "created": created_timestamp,
+                        "created_date": format_timestamp(created_timestamp),
                         "type": "capsule"
                     })
                     print(f"  Found capsule: {capsule.get('name')} (owner: {owner_id})", file=sys.stderr)
@@ -120,11 +140,14 @@ def find_user_resources(
                 # The search API returns 'owner' field, not 'owner_id'
                 owner_id = asset.get("owner") or asset.get("owner_id")
                 if owner_id in user_ids:
+                    created_timestamp = asset.get("created")
                     results["data_assets"].append({
                         "id": asset.get("id"),
                         "name": asset.get("name"),
                         "owner_id": owner_id,
-                        "created": asset.get("created"),
+                        "owner_email": asset.get("owner_email"),
+                        "created": created_timestamp,
+                        "created_date": format_timestamp(created_timestamp),
                         "type": asset.get("type"),
                         "size": asset.get("size")
                     })
@@ -165,7 +188,7 @@ def save_results(results: Dict, output_format: str, output_dir: Path) -> None:
             with open(capsules_file, "w", newline="") as f:
                 writer = csv.DictWriter(
                     f,
-                    fieldnames=["id", "name", "slug", "owner_id", "created", "type"]
+                    fieldnames=["id", "name", "slug", "owner_id", "owner_email", "status", "description", "tags", "created", "created_date", "type"]
                 )
                 writer.writeheader()
                 writer.writerows(results["capsules"])
@@ -177,7 +200,7 @@ def save_results(results: Dict, output_format: str, output_dir: Path) -> None:
             with open(assets_file, "w", newline="") as f:
                 writer = csv.DictWriter(
                     f,
-                    fieldnames=["id", "name", "owner_id", "created", "type", "size"]
+                    fieldnames=["id", "name", "owner_id", "owner_email", "created", "created_date", "type", "size"]
                 )
                 writer.writeheader()
                 writer.writerows(results["data_assets"])
