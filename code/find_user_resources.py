@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from codeocean import CodeOcean
+from codeocean.capsule import CapsuleSearchParams
 
 
 def format_timestamp(timestamp: int) -> str:
@@ -20,8 +21,6 @@ def format_timestamp(timestamp: int) -> str:
         return dt.strftime("%Y-%m-%d %H:%M:%S")
     except (ValueError, TypeError, OSError):
         return str(timestamp)
-
-
 
 
 
@@ -48,66 +47,62 @@ def find_user_resources(
     # Ensure base_url doesn't have trailing slash for URL construction
     base_url_clean = base_url.rstrip("/") if base_url else ""
     
-    # Helper function to search using SDK session
-    def search_resource(endpoint: str, limit: int, offset: int) -> Dict:
-        """Generic search helper using SDK's session."""
-        response = client.session.post(
-            f"{base_url_clean}/api/v1/{endpoint}/search",
-            json={"limit": limit, "offset": offset}
-        )
-        response.raise_for_status()
-        return response.json()
-    
     results = {
         "user_ids": user_ids,
-        "capsules": [],
-        "data_assets": []
+        "capsules": []
     }
     
     print(f"Searching for resources owned by {len(user_ids)} user(s)...", file=sys.stderr)
     
-    # Search all capsules
+    # Search all capsules using SDK method
     print("Searching capsules...", file=sys.stderr)
     offset = 0
     limit = 100
     
     while True:
         try:
-            # Use SDK's session for search endpoint
-            data = search_resource("capsules", limit, offset)
+            # Use SDK search_capsules method with proper parameter object
+            capsule_search_params = CapsuleSearchParams(
+                limit=limit,
+                offset=offset
+            )
+            response = client.capsules.search_capsules(capsule_search_params)
             
-            items = data.get("results", [])
+            # SDK returns CapsuleSearchResults object
+            items = response.results if hasattr(response, 'results') else []
             print(f"Fetched {len(items)} capsules at offset {offset}", file=sys.stderr)
             
             if not items:
                 break
                 
             for capsule in items:
+                # SDK returns Capsule objects - convert to dict or access attributes
+                capsule_dict = capsule.to_dict() if hasattr(capsule, 'to_dict') else capsule
+                
                 # Check if owner is in the target user list
-                # The search API returns 'owner' field, not 'owner_id'
-                owner_id = capsule.get("owner") or capsule.get("owner_id")
+                owner_id = capsule_dict.get("owner") or capsule_dict.get("owner_id")
                 if owner_id in user_ids:
-                    created_timestamp = capsule.get("created")
+                    created_timestamp = capsule_dict.get("created")
                     # Get tags as comma-separated string for CSV compatibility
-                    tags = capsule.get("tags", [])
+                    tags = capsule_dict.get("tags", [])
                     tags_str = ", ".join(tags) if tags else ""
                     
                     # Generate capsule URL with full domain
-                    slug = capsule.get("slug")
+                    slug = capsule_dict.get("slug")
                     capsule_url = f"{base_url_clean}/capsule/{slug}" if slug else ""
                     
                     # Get owner email from search response (may be None on some deployments)
-                    owner_email = capsule.get("owner_email")
+                    owner_email = capsule_dict.get("owner_email")
                     
                     # Build capsule record
                     capsule_record = {
-                        "id": capsule.get("id"),
-                        "name": capsule.get("name"),
+                        "id": capsule_dict.get("id"),
+                        "name": capsule_dict.get("name"),
                         "slug": slug,
                         "url": capsule_url,
                         "owner_id": owner_id,
-                        "status": capsule.get("status"),
-                        "description": capsule.get("description"),
+                        "status": capsule_dict.get("status"),
+                        "description": capsule_dict.get("description"),
                         "tags": tags_str,
                         "created": created_timestamp,
                         "created_date": format_timestamp(created_timestamp),
@@ -119,10 +114,11 @@ def find_user_resources(
                         capsule_record["owner_email"] = owner_email
                     
                     results["capsules"].append(capsule_record)
-                    print(f"  Found capsule: {capsule.get('name')} (owner: {owner_id})", file=sys.stderr)
+                    print(f"  Found capsule: {capsule_dict.get('name')} (owner: {owner_id})", file=sys.stderr)
             
             # Check if there are more results
-            if not data.get("has_more", False):
+            has_more = response.has_more if hasattr(response, 'has_more') else False
+            if not has_more:
                 break
             offset += limit
             
@@ -132,73 +128,7 @@ def find_user_resources(
             traceback.print_exc()
             break
     
-    # Search all data assets
-    print("Searching data assets...", file=sys.stderr)
-    offset = 0
-    
-    while True:
-        try:
-            # Use SDK's session for search endpoint
-            data = search_resource("data_assets", limit, offset)
-            
-            items = data.get("results", [])
-            print(f"Fetched {len(items)} data assets at offset {offset}", file=sys.stderr)
-            
-            # Debug: Show sample owner IDs from first batch
-            if offset == 0 and items:
-                sample_owners = [item.get("owner") or item.get("owner_id") for item in items[:3]]
-                print(f"  Sample owner IDs from data assets: {sample_owners}", file=sys.stderr)
-                print(f"  Looking for user IDs: {user_ids}", file=sys.stderr)
-            
-            if not items:
-                break
-                
-            for asset in items:
-                # Check if owner is in the target user list
-                # The search API returns 'owner' field, not 'owner_id'
-                owner_id = asset.get("owner") or asset.get("owner_id")
-                if owner_id in user_ids:
-                    created_timestamp = asset.get("created")
-                    
-                    # Generate data asset URL with full domain
-                    asset_id = asset.get("id")
-                    asset_url = f"{base_url_clean}/data-assets/{asset_id}" if asset_id else ""
-                    
-                    # Get owner email from search response (may be None on some deployments)
-                    owner_email = asset.get("owner_email")
-                    
-                    # Build data asset record
-                    asset_record = {
-                        "id": asset_id,
-                        "name": asset.get("name"),
-                        "url": asset_url,
-                        "owner_id": owner_id,
-                        "created": created_timestamp,
-                        "created_date": format_timestamp(created_timestamp),
-                        "type": asset.get("type"),
-                        "size": asset.get("size")
-                    }
-                    
-                    # Only include email if it's available
-                    if owner_email:
-                        asset_record["owner_email"] = owner_email
-                    
-                    results["data_assets"].append(asset_record)
-                    print(f"  Found data asset: {asset.get('name')} (owner: {owner_id})", file=sys.stderr)
-            
-            # Check if there are more results
-            if not data.get("has_more", False):
-                break
-            offset += limit
-            
-        except Exception as e:
-            print(f"Error searching data assets: {e}", file=sys.stderr)
-            import traceback
-            traceback.print_exc()
-            break
-    
-    print(f"\nFound {len(results['capsules'])} capsule(s) and "
-          f"{len(results['data_assets'])} data asset(s)", file=sys.stderr)
+    print(f"\nFound {len(results['capsules'])} capsule(s)", file=sys.stderr)
     
     return results
 
@@ -209,7 +139,7 @@ def save_results(results: Dict, output_format: str, output_dir: Path) -> None:
     
     if output_format == "json":
         # Save as JSON
-        output_file = output_dir / "user_resources.json"
+        output_file = output_dir / "user_capsules.json"
         with open(output_file, "w") as f:
             json.dump(results, f, indent=2)
         print(f"Results saved to {output_file}")
@@ -231,23 +161,6 @@ def save_results(results: Dict, output_format: str, output_dir: Path) -> None:
                 writer.writeheader()
                 writer.writerows(results["capsules"])
             print(f"Capsules saved to {capsules_file}")
-        
-        # Save data assets CSV
-        if results["data_assets"]:
-            assets_file = output_dir / "user_data_assets.csv"
-            
-            # Determine fields dynamically - check if any asset has email
-            has_email = any("owner_email" in a for a in results["data_assets"])
-            base_fields = ["id", "name", "url", "owner_id"]
-            if has_email:
-                base_fields.append("owner_email")
-            base_fields.extend(["created", "created_date", "type", "size"])
-            
-            with open(assets_file, "w", newline="") as f:
-                writer = csv.DictWriter(f, fieldnames=base_fields)
-                writer.writeheader()
-                writer.writerows(results["data_assets"])
-            print(f"Data assets saved to {assets_file}")
 
 
 def get_api_token() -> Optional[str]:
